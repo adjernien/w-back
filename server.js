@@ -119,15 +119,22 @@ app.get('/api/my-wishlists', verifyAppleToken, async (req, res) => {
   try {
     const userId = req.user.uid;
     
+    // UN SEUL filtre - pas d'index composite nécessaire
     const wishlistsQuery = db.collection('wishlists')
-    .where('userId', '==', userId)
-    .orderBy('createdAt', 'desc');
-  
-  const wishlistsSnapshot = await wishlistsQuery.get();
-  let wishlists = wishlistsSnapshot.docs.map(doc => doc.data());
-  
-  // Filtrer manuellement les wishlists actives
-  wishlists = wishlists.filter(wishlist => wishlist.isActive === true);
+      .where('userId', '==', userId);
+    
+    const wishlistsSnapshot = await wishlistsQuery.get();
+    let wishlists = wishlistsSnapshot.docs.map(doc => doc.data());
+    
+    // Filtrer manuellement les wishlists actives
+    wishlists = wishlists.filter(wishlist => wishlist.isActive === true);
+    
+    // Trier manuellement par date (plus récent en premier)
+    wishlists.sort((a, b) => {
+      const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+      const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+      return dateB - dateA;
+    });
 
     res.json({ wishlists });
   } catch (error) {
