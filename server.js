@@ -60,8 +60,7 @@ app.post('/api/users/setup', verifyAppleToken, async (req, res) => {
         id: userId,
         displayName: displayName || email?.split('@')[0] || 'Utilisateur',
         email: email || null,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        wishlistId: null
+        createdAt: admin.firestore.FieldValue.serverTimestamp()
       };
       
       await userRef.set(userData);
@@ -80,14 +79,6 @@ app.post('/api/wishlists', verifyAppleToken, async (req, res) => {
   try {
     const { name, description } = req.body;
     const userId = req.user.uid;
-
-    // Vérifier si l'utilisateur a déjà une wishlist
-    const userRef = db.collection('users').doc(userId);
-    const user = await userRef.get();
-    
-    if (user.data()?.wishlistId) {
-      return res.status(400).json({ error: 'Utilisateur a déjà une wishlist' });
-    }
 
     const wishlistId = crypto.randomUUID();
     const wishlistData = {
@@ -116,9 +107,6 @@ app.post('/api/wishlists', verifyAppleToken, async (req, res) => {
     // Sauvegarder la wishlist
     await db.collection('wishlists').doc(wishlistId).set(wishlistData);
 
-    // Mettre à jour l'utilisateur
-    await userRef.update({ wishlistId: wishlistId });
-
     res.json({ wishlist: wishlistData });
   } catch (error) {
     console.error('Erreur création wishlist:', error);
@@ -126,25 +114,46 @@ app.post('/api/wishlists', verifyAppleToken, async (req, res) => {
   }
 });
 
-// Récupérer ma wishlist
-app.get('/api/my-wishlist', verifyAppleToken, async (req, res) => {
+// Récupérer toutes mes wishlists
+app.get('/api/my-wishlists', verifyAppleToken, async (req, res) => {
   try {
     const userId = req.user.uid;
     
-    const userDoc = await db.collection('users').doc(userId).get();
-    const wishlistId = userDoc.data()?.wishlistId;
+    const wishlistsQuery = db.collection('wishlists')
+      .where('userId', '==', userId)
+      .where('isActive', '==', true)
+      .orderBy('createdAt', 'desc');
+    
+    const wishlistsSnapshot = await wishlistsQuery.get();
+    const wishlists = wishlistsSnapshot.docs.map(doc => doc.data());
 
-    if (!wishlistId) {
-      return res.json({ wishlist: null });
-    }
+    res.json({ wishlists });
+  } catch (error) {
+    console.error('Erreur récupération wishlists:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
 
+// Récupérer une wishlist spécifique de l'utilisateur
+app.get('/api/my-wishlists/:wishlistId', verifyAppleToken, async (req, res) => {
+  try {
+    const { wishlistId } = req.params;
+    const userId = req.user.uid;
+    
     const wishlistDoc = await db.collection('wishlists').doc(wishlistId).get();
     
     if (!wishlistDoc.exists) {
       return res.status(404).json({ error: 'Wishlist non trouvée' });
     }
 
-    res.json({ wishlist: wishlistDoc.data() });
+    const wishlistData = wishlistDoc.data();
+    
+    // Vérifier que la wishlist appartient à l'utilisateur
+    if (wishlistData.userId !== userId) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
+
+    res.json({ wishlist: wishlistData });
   } catch (error) {
     console.error('Erreur récupération wishlist:', error);
     res.status(500).json({ error: 'Erreur serveur' });
@@ -180,17 +189,23 @@ app.get('/api/wishlists/:id', async (req, res) => {
   }
 });
 
-// Ajouter un item à ma wishlist
-app.post('/api/my-wishlist/items', verifyAppleToken, async (req, res) => {
+// Ajouter un item à une wishlist spécifique
+app.post('/api/wishlists/:wishlistId/items', verifyAppleToken, async (req, res) => {
   try {
+    const { wishlistId } = req.params;
     const { name, price, description, imageUrl } = req.body;
     const userId = req.user.uid;
 
-    const userDoc = await db.collection('users').doc(userId).get();
-    const wishlistId = userDoc.data()?.wishlistId;
-
-    if (!wishlistId) {
-      return res.status(400).json({ error: 'Aucune wishlist trouvée' });
+    // Vérifier que la wishlist existe et appartient à l'utilisateur
+    const wishlistDoc = await db.collection('wishlists').doc(wishlistId).get();
+    
+    if (!wishlistDoc.exists) {
+      return res.status(404).json({ error: 'Wishlist non trouvée' });
+    }
+    
+    const wishlistData = wishlistDoc.data();
+    if (wishlistData.userId !== userId) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
     const itemId = crypto.randomUUID();
@@ -219,26 +234,24 @@ app.post('/api/my-wishlist/items', verifyAppleToken, async (req, res) => {
   }
 });
 
-// Modifier un item de ma wishlist
-app.put('/api/my-wishlist/items/:itemId', verifyAppleToken, async (req, res) => {
+// Modifier un item d'une wishlist spécifique
+app.put('/api/wishlists/:wishlistId/items/:itemId', verifyAppleToken, async (req, res) => {
   try {
-    const { itemId } = req.params;
+    const { wishlistId, itemId } = req.params;
     const { name, price, description, imageUrl } = req.body;
     const userId = req.user.uid;
 
-    const userDoc = await db.collection('users').doc(userId).get();
-    const wishlistId = userDoc.data()?.wishlistId;
-
-    if (!wishlistId) {
-      return res.status(400).json({ error: 'Aucune wishlist trouvée' });
-    }
-
+    // Vérifier que la wishlist existe et appartient à l'utilisateur
     const wishlistRef = db.collection('wishlists').doc(wishlistId);
     const wishlistDoc = await wishlistRef.get();
-    const wishlistData = wishlistDoc.data();
-
-    if (!wishlistData) {
+    
+    if (!wishlistDoc.exists) {
       return res.status(404).json({ error: 'Wishlist non trouvée' });
+    }
+    
+    const wishlistData = wishlistDoc.data();
+    if (wishlistData.userId !== userId) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
     // Trouver l'item à modifier
@@ -280,25 +293,23 @@ app.put('/api/my-wishlist/items/:itemId', verifyAppleToken, async (req, res) => 
   }
 });
 
-// Supprimer un item de ma wishlist
-app.delete('/api/my-wishlist/items/:itemId', verifyAppleToken, async (req, res) => {
+// Supprimer un item d'une wishlist spécifique
+app.delete('/api/wishlists/:wishlistId/items/:itemId', verifyAppleToken, async (req, res) => {
   try {
-    const { itemId } = req.params;
+    const { wishlistId, itemId } = req.params;
     const userId = req.user.uid;
 
-    const userDoc = await db.collection('users').doc(userId).get();
-    const wishlistId = userDoc.data()?.wishlistId;
-
-    if (!wishlistId) {
-      return res.status(400).json({ error: 'Aucune wishlist trouvée' });
-    }
-
+    // Vérifier que la wishlist existe et appartient à l'utilisateur
     const wishlistRef = db.collection('wishlists').doc(wishlistId);
     const wishlistDoc = await wishlistRef.get();
-    const wishlistData = wishlistDoc.data();
-
-    if (!wishlistData) {
+    
+    if (!wishlistDoc.exists) {
       return res.status(404).json({ error: 'Wishlist non trouvée' });
+    }
+    
+    const wishlistData = wishlistDoc.data();
+    if (wishlistData.userId !== userId) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
     }
 
     // Trouver l'item à supprimer
@@ -386,6 +397,84 @@ app.get('/api/wishlists/:id/contributions', async (req, res) => {
     res.json({ contributions });
   } catch (error) {
     console.error('Erreur récupération contributions:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Modifier les informations d'une wishlist
+app.put('/api/wishlists/:wishlistId', verifyAppleToken, async (req, res) => {
+  try {
+    const { wishlistId } = req.params;
+    const { name, description } = req.body;
+    const userId = req.user.uid;
+
+    // Vérifier que la wishlist existe et appartient à l'utilisateur
+    const wishlistRef = db.collection('wishlists').doc(wishlistId);
+    const wishlistDoc = await wishlistRef.get();
+    
+    if (!wishlistDoc.exists) {
+      return res.status(404).json({ error: 'Wishlist non trouvée' });
+    }
+    
+    const wishlistData = wishlistDoc.data();
+    if (wishlistData.userId !== userId) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
+
+    // Préparer les données à mettre à jour
+    const updateData = {};
+    if (name !== undefined) updateData.name = name;
+    if (description !== undefined) updateData.description = description;
+
+    // Mettre à jour la wishlist
+    await wishlistRef.update(updateData);
+
+    // Récupérer la wishlist mise à jour
+    const updatedWishlistDoc = await wishlistRef.get();
+    
+    res.json({
+      success: true,
+      wishlist: updatedWishlistDoc.data(),
+      message: 'Wishlist modifiée avec succès'
+    });
+  } catch (error) {
+    console.error('Erreur modification wishlist:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Supprimer une wishlist
+app.delete('/api/wishlists/:wishlistId', verifyAppleToken, async (req, res) => {
+  try {
+    const { wishlistId } = req.params;
+    const userId = req.user.uid;
+
+    // Vérifier que la wishlist existe et appartient à l'utilisateur
+    const wishlistRef = db.collection('wishlists').doc(wishlistId);
+    const wishlistDoc = await wishlistRef.get();
+    
+    if (!wishlistDoc.exists) {
+      return res.status(404).json({ error: 'Wishlist non trouvée' });
+    }
+    
+    const wishlistData = wishlistDoc.data();
+    if (wishlistData.userId !== userId) {
+      return res.status(403).json({ error: 'Accès non autorisé' });
+    }
+
+    // Marquer la wishlist comme inactive au lieu de la supprimer complètement
+    // pour préserver l'historique des contributions
+    await wishlistRef.update({
+      isActive: false,
+      deletedAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    res.json({
+      success: true,
+      message: 'Wishlist supprimée avec succès'
+    });
+  } catch (error) {
+    console.error('Erreur suppression wishlist:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
