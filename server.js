@@ -99,7 +99,7 @@ app.post('/api/wishlists', verifyAppleToken, async (req, res) => {
       totalAmount: 0,
       collectedAmount: 0,
       qrCode: null,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      createdAt: new Date(),
       isActive: true
     };
 
@@ -219,115 +219,115 @@ app.post('/api/my-wishlist/items', verifyAppleToken, async (req, res) => {
   }
 });
 
-  // Modifier un item de ma wishlist
-  app.put('/api/my-wishlist/items/:itemId', verifyAppleToken, async (req, res) => {
-    try {
-      const { itemId } = req.params;
-      const { name, price, description, imageUrl } = req.body;
-      const userId = req.user.uid;
+// Modifier un item de ma wishlist
+app.put('/api/my-wishlist/items/:itemId', verifyAppleToken, async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const { name, price, description, imageUrl } = req.body;
+    const userId = req.user.uid;
 
-      const userDoc = await db.collection('users').doc(userId).get();
-      const wishlistId = userDoc.data()?.wishlistId;
+    const userDoc = await db.collection('users').doc(userId).get();
+    const wishlistId = userDoc.data()?.wishlistId;
 
-      if (!wishlistId) {
-        return res.status(400).json({ error: 'Aucune wishlist trouvée' });
-      }
-
-      const wishlistRef = db.collection('wishlists').doc(wishlistId);
-      const wishlistDoc = await wishlistRef.get();
-      const wishlistData = wishlistDoc.data();
-
-      if (!wishlistData) {
-        return res.status(404).json({ error: 'Wishlist non trouvée' });
-      }
-
-      // Trouver l'item à modifier
-      const items = wishlistData.items || [];
-      const itemIndex = items.findIndex(item => item.id === itemId);
-
-      if (itemIndex === -1) {
-        return res.status(404).json({ error: 'Item non trouvé' });
-      }
-
-      const oldItem = items[itemIndex];
-      const priceDifference = (parseFloat(price) || 0) - oldItem.price;
-
-      // Mettre à jour l'item
-      const updatedItem = {
-        ...oldItem,
-        name: name || oldItem.name,
-        price: parseFloat(price) || 0,
-        description: description || '',
-        imageUrl: imageUrl || null
-      };
-
-      items[itemIndex] = updatedItem;
-
-      // Mettre à jour la wishlist
-      await wishlistRef.update({
-        items: items,
-        totalAmount: admin.firestore.FieldValue.increment(priceDifference)
-      });
-
-      res.json({
-        success: true,
-        item: updatedItem,
-        message: 'Item modifié avec succès'
-      });
-    } catch (error) {
-      console.error('Erreur modification item:', error);
-      res.status(500).json({ error: 'Erreur serveur' });
+    if (!wishlistId) {
+      return res.status(400).json({ error: 'Aucune wishlist trouvée' });
     }
-  });
 
-  // Supprimer un item de ma wishlist
-  app.delete('/api/my-wishlist/items/:itemId', verifyAppleToken, async (req, res) => {
-    try {
-      const { itemId } = req.params;
-      const userId = req.user.uid;
+    const wishlistRef = db.collection('wishlists').doc(wishlistId);
+    const wishlistDoc = await wishlistRef.get();
+    const wishlistData = wishlistDoc.data();
 
-      const userDoc = await db.collection('users').doc(userId).get();
-      const wishlistId = userDoc.data()?.wishlistId;
-
-      if (!wishlistId) {
-        return res.status(400).json({ error: 'Aucune wishlist trouvée' });
-      }
-
-      const wishlistRef = db.collection('wishlists').doc(wishlistId);
-      const wishlistDoc = await wishlistRef.get();
-      const wishlistData = wishlistDoc.data();
-
-      if (!wishlistData) {
-        return res.status(404).json({ error: 'Wishlist non trouvée' });
-      }
-
-      // Trouver l'item à supprimer
-      const items = wishlistData.items || [];
-      const itemToDelete = items.find(item => item.id === itemId);
-
-      if (!itemToDelete) {
-        return res.status(404).json({ error: 'Item non trouvé' });
-      }
-
-      // Supprimer l'item du tableau
-      const updatedItems = items.filter(item => item.id !== itemId);
-
-      // Mettre à jour la wishlist
-      await wishlistRef.update({
-        items: updatedItems,
-        totalAmount: admin.firestore.FieldValue.increment(-itemToDelete.price),
-        collectedAmount: admin.firestore.FieldValue.increment(-itemToDelete.collectedAmount)
-      });
-
-      res.json({
-        success: true,
-        message: 'Item supprimé avec succès'
-      });
-    } catch (error) {
-      console.error('Erreur suppression item:', error);
-      res.status(500).json({ error: 'Erreur serveur' });
+    if (!wishlistData) {
+      return res.status(404).json({ error: 'Wishlist non trouvée' });
     }
-  });
+
+    // Trouver l'item à modifier
+    const items = wishlistData.items || [];
+    const itemIndex = items.findIndex(item => item.id === itemId);
+
+    if (itemIndex === -1) {
+      return res.status(404).json({ error: 'Item non trouvé' });
+    }
+
+    const oldItem = items[itemIndex];
+    const priceDifference = (parseFloat(price) || 0) - oldItem.price;
+
+    // Mettre à jour l'item
+    const updatedItem = {
+      ...oldItem,
+      name: name || oldItem.name,
+      price: parseFloat(price) || 0,
+      description: description || '',
+      imageUrl: imageUrl || null
+    };
+
+    items[itemIndex] = updatedItem;
+
+    // Mettre à jour la wishlist
+    await wishlistRef.update({
+      items: items,
+      totalAmount: admin.firestore.FieldValue.increment(priceDifference)
+    });
+
+    res.json({
+      success: true,
+      item: updatedItem,
+      message: 'Item modifié avec succès'
+    });
+  } catch (error) {
+    console.error('Erreur modification item:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Supprimer un item de ma wishlist
+app.delete('/api/my-wishlist/items/:itemId', verifyAppleToken, async (req, res) => {
+  try {
+    const { itemId } = req.params;
+    const userId = req.user.uid;
+
+    const userDoc = await db.collection('users').doc(userId).get();
+    const wishlistId = userDoc.data()?.wishlistId;
+
+    if (!wishlistId) {
+      return res.status(400).json({ error: 'Aucune wishlist trouvée' });
+    }
+
+    const wishlistRef = db.collection('wishlists').doc(wishlistId);
+    const wishlistDoc = await wishlistRef.get();
+    const wishlistData = wishlistDoc.data();
+
+    if (!wishlistData) {
+      return res.status(404).json({ error: 'Wishlist non trouvée' });
+    }
+
+    // Trouver l'item à supprimer
+    const items = wishlistData.items || [];
+    const itemToDelete = items.find(item => item.id === itemId);
+
+    if (!itemToDelete) {
+      return res.status(404).json({ error: 'Item non trouvé' });
+    }
+
+    // Supprimer l'item du tableau
+    const updatedItems = items.filter(item => item.id !== itemId);
+
+    // Mettre à jour la wishlist
+    await wishlistRef.update({
+      items: updatedItems,
+      totalAmount: admin.firestore.FieldValue.increment(-itemToDelete.price),
+      collectedAmount: admin.firestore.FieldValue.increment(-itemToDelete.collectedAmount)
+    });
+
+    res.json({
+      success: true,
+      message: 'Item supprimé avec succès'
+    });
+  } catch (error) {
+    console.error('Erreur suppression item:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
 
 // Simuler une contribution
 app.post('/api/wishlists/:id/contribute', async (req, res) => {
