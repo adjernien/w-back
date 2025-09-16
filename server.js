@@ -120,12 +120,14 @@ app.get('/api/my-wishlists', verifyAppleToken, async (req, res) => {
     const userId = req.user.uid;
     
     const wishlistsQuery = db.collection('wishlists')
-      .where('userId', '==', userId)
-      .where('isActive', '==', true)
-      .orderBy('createdAt');
-    
-    const wishlistsSnapshot = await wishlistsQuery.get();
-    const wishlists = wishlistsSnapshot.docs.map(doc => doc.data());
+    .where('userId', '==', userId)
+    .orderBy('createdAt', 'desc');
+  
+  const wishlistsSnapshot = await wishlistsQuery.get();
+  let wishlists = wishlistsSnapshot.docs.map(doc => doc.data());
+  
+  // Filtrer manuellement les wishlists actives
+  wishlists = wishlists.filter(wishlist => wishlist.isActive === true);
 
     res.json({ wishlists });
   } catch (error) {
