@@ -122,7 +122,7 @@ app.get('/api/my-wishlists', verifyAppleToken, async (req, res) => {
     const wishlistsQuery = db.collection('wishlists')
       .where('userId', '==', userId)
       .where('isActive', '==', true)
-      .orderBy('createdAt', 'desc');
+      .orderBy('createdAt');
     
     const wishlistsSnapshot = await wishlistsQuery.get();
     const wishlists = wishlistsSnapshot.docs.map(doc => doc.data());
