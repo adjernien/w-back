@@ -202,11 +202,11 @@ app.post('/api/my-wishlist/items', verifyAppleToken, async (req, res) => {
       imageUrl: imageUrl || null,
       collectedAmount: 0,
       isCompleted: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp()
+      createdAt: new Date() // ← Changé ici : utilise new Date() au lieu de serverTimestamp()
     };
 
     const wishlistRef = db.collection('wishlists').doc(wishlistId);
-    
+
     await wishlistRef.update({
       items: admin.firestore.FieldValue.arrayUnion(newItem),
       totalAmount: admin.firestore.FieldValue.increment(newItem.price)
@@ -276,6 +276,142 @@ app.get('/api/wishlists/:id/contributions', async (req, res) => {
     res.json({ contributions });
   } catch (error) {
     console.error('Erreur récupération contributions:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+ // Récupérer la liste des amis
+ app.get('/api/friends', verifyAppleToken, async (req, res) => {
+  try {
+    const userId = req.user.uid;
+
+    const userDoc = await db.collection('users').doc(userId).get();
+    const friendIds = userDoc.data()?.friends || [];
+
+    if (friendIds.length === 0) {
+      return res.json({ friends: [] });
+    }
+
+    const friendsQuery = db.collection('users').where(admin.firestore.FieldPath.documentId(), 'in', friendIds);
+    const friendsSnapshot = await friendsQuery.get();
+
+    const friends = friendsSnapshot.docs.map(doc => ({
+      id: doc.id,
+      displayName: doc.data().displayName,
+      email: doc.data().email,
+      addedAt: new Date() // Vous pouvez stocker la vraie date d'ajout
+    }));
+
+    res.json({ friends });
+  } catch (error) {
+    console.error('Erreur récupération amis:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Ajouter un ami par email
+app.post('/api/friends/add-by-email', verifyAppleToken, async (req, res) => {
+  try {
+    const { email } = req.body;
+    const userId = req.user.uid;
+
+    if (!email) {
+      return res.status(400).json({ error: 'Email requis' });
+    }
+
+    // Chercher l'utilisateur par email
+    const usersQuery = db.collection('users').where('email', '==', email);
+    const usersSnapshot = await usersQuery.get();
+
+    if (usersSnapshot.empty) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé avec cet email' });
+    }
+
+    const friendDoc = usersSnapshot.docs[0];
+    const friendId = friendDoc.id;
+
+    if (friendId === userId) {
+      return res.status(400).json({ error: 'Vous ne pouvez pas vous ajouter vous-même' });
+    }
+
+    // Ajouter à la liste d'amis
+    const userRef = db.collection('users').doc(userId);
+    await userRef.update({
+      friends: admin.firestore.FieldValue.arrayUnion(friendId)
+    });
+
+    // Ajouter réciproquement
+    const friendRef = db.collection('users').doc(friendId);
+    await friendRef.update({
+      friends: admin.firestore.FieldValue.arrayUnion(userId)
+    });
+
+    res.json({
+      success: true,
+      message: 'Ami ajouté avec succès',
+      friend: {
+        id: friendId,
+        displayName: friendDoc.data().displayName,
+        email: friendDoc.data().email
+      }
+    });
+  } catch (error) {
+    console.error('Erreur ajout ami par email:', error);
+    res.status(500).json({ error: 'Erreur serveur' });
+  }
+});
+
+// Ajouter un ami par QR code
+app.post('/api/friends/add-by-qr', verifyAppleToken, async (req, res) => {
+  try {
+    const { friendId } = req.body;
+    const userId = req.user.uid;
+
+    if (!friendId) {
+      return res.status(400).json({ error: 'ID ami requis' });
+    }
+
+    if (friendId === userId) {
+      return res.status(400).json({ error: 'Vous ne pouvez pas vous ajouter vous-même' });
+    }
+
+    // Vérifier que l'ami existe
+    const friendDoc = await db.collection('users').doc(friendId).get();
+    if (!friendDoc.exists) {
+      return res.status(404).json({ error: 'Utilisateur non trouvé' });
+    }
+
+    // Vérifier s'ils ne sont pas déjà amis
+    const userDoc = await db.collection('users').doc(userId).get();
+    const currentFriends = userDoc.data()?.friends || [];
+
+    if (currentFriends.includes(friendId)) {
+      return res.status(400).json({ error: 'Vous êtes déjà amis' });
+    }
+
+    // Ajouter à la liste d'amis
+    const userRef = db.collection('users').doc(userId);
+    await userRef.update({
+      friends: admin.firestore.FieldValue.arrayUnion(friendId)
+    });
+
+    // Ajouter réciproquement
+    const friendRef = db.collection('users').doc(friendId);
+    await friendRef.update({
+      friends: admin.firestore.FieldValue.arrayUnion(userId)
+    });
+
+    res.json({
+      success: true,
+      message: 'Ami ajouté avec succès',
+      friend: {
+        id: friendId,
+        displayName: friendDoc.data().displayName,
+        email: friendDoc.data().email
+      }
+    });
+  } catch (error) {
+    console.error('Erreur ajout ami par QR:', error);
     res.status(500).json({ error: 'Erreur serveur' });
   }
 });
